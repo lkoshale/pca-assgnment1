@@ -1,0 +1,7 @@
+C#.L#.memRefs =
+C#.L#.numReads = 
+C#.L#.numWrites = 
+C#.L#.numHits = 
+C#.L#.missRatio = 
+C#.L#.numWritebacks =
+C#.L#.numCleanEvicts = 

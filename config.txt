@@ -1,0 +1,5 @@
+#numLevels Inclusive(0)/Exclusive(1) Block Size
+#cacheSize assoc(^2) replacePolicy(0-LRU, 1-FIFO, 2- SRRIP, 3-psuedoLRU) writeThrough(0)/writeBack(1) (one line for each cache level)
+2 0 64
+16384 4 2 1
+262144 8 1 0
