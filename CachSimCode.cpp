@@ -104,6 +104,9 @@ class SET {
     }
 };
 
+//forward class declaration
+class ReplacementPolicy;
+
 class Cache {
 
 public:
@@ -113,9 +116,10 @@ public:
   int level;
 
   int asocitivity;
-  int replacementPolicy;
+  int replacementPolicyID;
   int writePolicy;
 
+  ReplacementPolicy* replacementPolicy;
   // indexing
   int indexSize;
   vector<SET*> cache ;
@@ -129,7 +133,7 @@ public:
     this->size = size;
     this->level = level;
     this->asocitivity = asc;
-    this->replacementPolicy = rpl;
+    this->replacementPolicyID = rpl;
     this->writePolicy = w;
 
     //set indexSize
@@ -196,6 +200,20 @@ int Cache:: cacheLookup(string addrs){
     return 0;
 }
 
+class ReplacementPolicy
+{
+  int policy;
+  vector<int>FIFODATA;
+  vector< vector<int> >LRUDATA;
+  vector<int>pseudoLRUDATA;
+public:
+  ReplacementPolicy(int id,Cache* cache);
+  void Fifo(Cache* cache );
+  void Lru(Cache* cache);
+  void pseudoLru(Cache* cache);
+
+};
+
 
 /* Object oriented way */
 /* modularizing for one or more cores */
@@ -235,4 +253,8 @@ int main(int argc, char const *argv[]) {
 
   return 0;
 
+}
+
+ReplacementPolicy :: ReplacementPolicy(int id,Cache* cache){
+    
 }
