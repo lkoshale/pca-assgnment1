@@ -16,9 +16,8 @@ using namespace std;
 #define PSUEDO_LRU 3
 #define WRITE_THROUGH 0
 #define WRITE_BACK 1
-#define INCLUSIVE 0
-#define EXCLUSIVE 1
-
+// #define INCLUSIVE 0
+// #define EXCLUSIVE 1
 
 ////////////////////////////
 
@@ -86,11 +85,7 @@ public:
   string tag;
   string data;
   //constructor
-  BLOCK(){
-    this->valid = false;
-
-  }
-
+  BLOCK(){this->valid = false;}
 };
 
 class SET {
@@ -107,9 +102,9 @@ class SET {
 class ReplacementPolicy;
 
 class Cache {
-
 public:
   long blockSize;
+  bool inclusive;
   long size;
   string label;
   int level;
@@ -125,19 +120,19 @@ public:
 
   //inclusive cache
   vector< Cache* > included;
+  Cache* nextLevel;
 
-  Cache(int blockSize,string label,int level,int size,int asc,int rpl,int w);
-
-
+  Cache(int blockSize,bool inclusive,string label,int level,int size,int asc,int rpl,int w);
   //initailize all vectors
   void createCache();
+  void addNextLevelCache(Cache* ch);
   //lookup method
+  // return 1 to previous level if found
   int cacheLookup( string address );
 
 };
 
-class ReplacementPolicy
-{
+class ReplacementPolicy {
   int policy;
   Cache* cache;
   vector<int>FIFODATA;
@@ -150,7 +145,7 @@ public:
   void Lru(int setIndex,string addrs,string tag);
   void pseudoLru(int setIndex,string addrs,string tag);
   void CacheHitUpdate(int setIndex,int blockIndex);
-
+  void EvictData(string addrs);
 };
 
 
@@ -187,7 +182,7 @@ int main(int argc, char const *argv[]) {
 
   //for test
   Core c1(1);
-  Cache L1(64,"L1",0,16384,4,1,1);
+  Cache L1(64,true,"L1",1,16384,4,1,1);
 
   L1.cacheLookup("0x00007ffea7aec6a8");
   L1.cacheLookup("0x00007ffea7aec6a8");
@@ -228,6 +223,14 @@ void ReplacementPolicy::Fifo(int setIndex,string addrs,string tag){
   // counter mod n
   int torep = (this->FIFODATA[setIndex])%(this->cache->asocitivity) ;
   BLOCK* block = set->blocks[torep];
+
+  //evict the old data
+  if(block->valid){
+    string evicAddrs = block->data; //here addrs is stored as data
+    EvictData(evicAddrs);
+  }
+
+  // add new data
   block->tag = tag;
   //storing addrs as data
   block->data = addrs;
@@ -258,14 +261,54 @@ void ReplacementPolicy::CacheHitUpdate(int setIndex,int blockIndex){
 
 }
 
-Cache::Cache(int blockSize,string label,int level,int size,int asc,int rpl,int w){
+void ReplacementPolicy::EvictData(string addrs){
+  string bitAdrs = HextoBinary(addrs);
+
+  if(this->cache->inclusive){
+    //back validation
+    for(int i=0;i< cache->included.size();i++){
+      Cache* ch = cache->included[i];
+      int indexOfset = log2(ch->indexSize);
+      int wordOfset = log2(ch->blockSize);
+      string tag = bitAdrs.substr(0,(bitAdrs.length()-(indexOfset+wordOfset)));
+      string index = bitAdrs.substr(tag.size(),indexOfset);
+
+      int setIndex = stoi(index,nullptr,2);
+      SET* set = ch->cache[setIndex];
+      for(int i =0;i< (set->blocks.size());i++){
+        if((set->blocks[i])->valid){
+          if( (set->blocks[i])->tag == tag)
+            (set->blocks[i])->valid = false;  //invalidate the data
+        }
+      }
+
+    }
+  }
+  else{ //if exclusive
+    //evict and write to next level
+    if(cache->nextLevel!=nullptr){
+      int indexOfset = log2(cache->nextLevel->indexSize);
+      int wordOfset = log2(cache->nextLevel->blockSize);
+      string tag = bitAdrs.substr(0,(bitAdrs.length()-(indexOfset+wordOfset)));
+      string index = bitAdrs.substr(tag.size(),indexOfset);
+      int setIndex = stoi(index,nullptr,2);
+      (cache->nextLevel)->replacementPolicy->Replace(setIndex,addrs,tag);
+    }
+    //else last level data gone
+    return;
+  }
+}
+
+Cache::Cache(int blockSize,bool inclusive,string label,int level,int size,int asc,int rpl,int w){
   this->blockSize = blockSize;
+  this->inclusive = inclusive;
   this->label = label;
   this->size = size;
   this->level = level;
   this->asocitivity = asc;
   this->replacementPolicyID = rpl;
   this->writePolicy = w;
+  this->nextLevel = nullptr;
 
   //set indexSize
   this->indexSize = this->size/(this->asocitivity * this->blockSize);
@@ -288,8 +331,6 @@ void Cache:: createCache(){
 
 int Cache:: cacheLookup(string addrs){
   string bitAdrs = HextoBinary(addrs);
-  // cout<<bitAdrs<<" "<<bitAdrs.length();
-
   //last bit for block
   int wordOfset = log2(this->blockSize);
   int indexOfset = log2(this->indexSize);
@@ -316,9 +357,28 @@ int Cache:: cacheLookup(string addrs){
   }
   //cache miss
   if(!hit){
-    this->replacementPolicy->Replace(setIndex,addrs,tag);
     cout<<"cache miss"<<"\n";
+    if(this->nextLevel!=nullptr){
+        //go to next level
+        int val = nextLevel->cacheLookup(addrs);
+        if( val ==-1 && (this->inclusive || this->level == 1) ){ //if miss and back to first level or inclusive
+            this->replacementPolicy->Replace(setIndex,addrs,tag); //replace the block
+        }
+        return -1; //return miss
+    }else{
+      // see inlcusive exclusive policy all miss lookup from memory
+        if(this->inclusive || this->level==1){
+          this->replacementPolicy->Replace(setIndex,addrs,tag);
+        }
+        //return a miss
+        return -1;
+    }
+
   }
 
-    return 0;
+    return 1; //return hit
+}
+
+void Cache::addNextLevelCache(Cache* ch){
+  this->nextLevel = ch;
 }
