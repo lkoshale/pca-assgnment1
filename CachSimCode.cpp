@@ -82,7 +82,6 @@ string HextoBinary(string Oxhex){
 ////////////////////////////////////
 class BLOCK{
 public:
-  int tagSize;
   bool valid;
   string tag;
   string data;
@@ -127,19 +126,8 @@ public:
   //inclusive cache
   vector< Cache* > included;
 
-  Cache(int blockSize,string label,int level,int size,int asc,int rpl,int w){
-    this->blockSize = blockSize;
-    this->label = label;
-    this->size = size;
-    this->level = level;
-    this->asocitivity = asc;
-    this->replacementPolicyID = rpl;
-    this->writePolicy = w;
+  Cache(int blockSize,string label,int level,int size,int asc,int rpl,int w);
 
-    //set indexSize
-    this->indexSize = this->size/(this->asocitivity * this->blockSize);
-    createCache();
-  }
 
   //initailize all vectors
   void createCache();
@@ -148,71 +136,23 @@ public:
 
 };
 
-//initailizse all the blocks with valid bit 0
-void Cache:: createCache(){
-  for(int i=0;i<this->indexSize;i++){
-    SET* s = new SET(this->asocitivity);
-    for(int j=0;j<this->asocitivity;j++){
-      BLOCK* b = new BLOCK();
-      s->blocks.push_back(b);
-    }
-    this->cache.push_back(s);
-  }
-
-}
-
-
-int Cache:: cacheLookup(string addrs){
-  string bitAdrs = HextoBinary(addrs);
-  // cout<<bitAdrs<<" "<<bitAdrs.length();
-
-  //last bit for block
-  int wordOfset = log2(this->blockSize);
-  int indexOfset = log2(this->indexSize);
-  string tag = bitAdrs.substr(0,(bitAdrs.length()-(indexOfset+wordOfset)));
-  string index = bitAdrs.substr(tag.size(),indexOfset);
-
-  //cout<<wordOfset<<" "<<indexOfset<<" "<<tag.size()<<" "<<tag<<" "<<index<<"\n";
-  int setIndex = stoi(index,nullptr,2);
-  SET* set = this->cache[setIndex];
-
-  for(auto itr= set->blocks.begin();itr!= set->blocks.end();itr++){
-    //*itr is pointer to BLOCK objects
-    // if the block is valid
-    if( (*itr)->valid ){
-      //match for tag
-      if( (*itr)->tag == tag){
-          //TODO cache HIT
-
-
-          break;
-      }
-      else{
-        // cache miss
-        cout<<"cache miss\n";
-      }
-    }else{
-      //cache miss
-      cout<<"not valid cache miss\n";
-    }
-  }
-
-    return 0;
-}
-
 class ReplacementPolicy
 {
   int policy;
+  Cache* cache;
   vector<int>FIFODATA;
   vector< vector<int> >LRUDATA;
   vector<int>pseudoLRUDATA;
 public:
   ReplacementPolicy(int id,Cache* cache);
-  void Fifo(Cache* cache );
-  void Lru(Cache* cache);
-  void pseudoLru(Cache* cache);
+  void Replace(int setIndex,string addrs,string tag);
+  void Fifo( int setIndex,string addrs,string tag);
+  void Lru(int setIndex,string addrs,string tag);
+  void pseudoLru(int setIndex,string addrs,string tag);
+  void CacheHitUpdate(int setIndex,int blockIndex);
 
 };
+
 
 
 /* Object oriented way */
@@ -247,14 +187,138 @@ int main(int argc, char const *argv[]) {
 
   //for test
   Core c1(1);
-  Cache L1(64,"L1",0,16384,4,2,1);
+  Cache L1(64,"L1",0,16384,4,1,1);
 
+  L1.cacheLookup("0x00007ffea7aec6a8");
   L1.cacheLookup("0x00007ffea7aec6a8");
 
   return 0;
 
 }
 
-ReplacementPolicy :: ReplacementPolicy(int id,Cache* cache){
-    
+ReplacementPolicy::ReplacementPolicy(int id,Cache* cache){
+  this->policy = id;
+  this->cache = cache;
+  if(policy==FIFO){
+    //initailize the data with first element of set to replce first
+    for(int i=0;i<(cache->indexSize);i++){
+      this->FIFODATA.push_back(0);
+    }
+  }else if(policy == LRU){
+    //TODO initailize LRUDATA
+  }else if(policy==PSUEDO_LRU){
+
+  }
+    //TODO initailize pseudoLRUDATA
+
+}
+
+void ReplacementPolicy::Replace(int setIndex,string addrs,string tag){
+  if(policy==FIFO)
+    Fifo(setIndex,addrs,tag);
+  else if(policy == LRU)
+    Lru(setIndex,addrs,tag);
+  else if(policy==PSUEDO_LRU)
+    pseudoLru(setIndex,addrs,tag);
+}
+
+void ReplacementPolicy::Fifo(int setIndex,string addrs,string tag){
+  SET* set = (this->cache)->cache[setIndex];
+  //the index of block in set which should be replaced
+  // counter mod n
+  int torep = (this->FIFODATA[setIndex])%(this->cache->asocitivity) ;
+  BLOCK* block = set->blocks[torep];
+  block->tag = tag;
+  //storing addrs as data
+  block->data = addrs;
+  block->valid = true;
+
+  //update count
+  this->FIFODATA[setIndex]+=1;
+}
+
+void ReplacementPolicy::Lru(int setIndex,string addrs,string tag){
+
+}
+
+void ReplacementPolicy::pseudoLru(int setIndex,string addrs,string tag){
+
+}
+
+void ReplacementPolicy::CacheHitUpdate(int setIndex,int blockIndex){
+  if(policy == FIFO){
+    //DO NOTHING
+  }
+  else if(policy == LRU){
+    //TODO add policy
+  }
+  else if(policy==PSUEDO_LRU){
+    //TODO add policy
+  }
+
+}
+
+Cache::Cache(int blockSize,string label,int level,int size,int asc,int rpl,int w){
+  this->blockSize = blockSize;
+  this->label = label;
+  this->size = size;
+  this->level = level;
+  this->asocitivity = asc;
+  this->replacementPolicyID = rpl;
+  this->writePolicy = w;
+
+  //set indexSize
+  this->indexSize = this->size/(this->asocitivity * this->blockSize);
+  this->replacementPolicy = new ReplacementPolicy(replacementPolicyID,this);
+  createCache();
+}
+//initailizse all the blocks with valid bit 0
+void Cache:: createCache(){
+  for(int i=0;i<this->indexSize;i++){
+    SET* s = new SET(this->asocitivity);
+    for(int j=0;j<this->asocitivity;j++){
+      BLOCK* b = new BLOCK();
+      s->blocks.push_back(b);
+    }
+    this->cache.push_back(s);
+  }
+
+}
+
+
+int Cache:: cacheLookup(string addrs){
+  string bitAdrs = HextoBinary(addrs);
+  // cout<<bitAdrs<<" "<<bitAdrs.length();
+
+  //last bit for block
+  int wordOfset = log2(this->blockSize);
+  int indexOfset = log2(this->indexSize);
+  string tag = bitAdrs.substr(0,(bitAdrs.length()-(indexOfset+wordOfset)));
+  string index = bitAdrs.substr(tag.size(),indexOfset);
+
+  //cout<<wordOfset<<" "<<indexOfset<<" "<<tag.size()<<" "<<tag<<" "<<index<<"\n";
+  int setIndex = stoi(index,nullptr,2);
+  SET* set = this->cache[setIndex];
+  bool hit = false;
+  for(int i =0;i< (set->blocks.size());i++){
+    //*itr is pointer to BLOCK objects
+    // if the block is valid
+    if( (set->blocks[i])->valid ){
+      //match for tag
+      if( (set->blocks[i])->tag == tag){
+          //cache HIT
+          hit = true;  // get data and supply to cpu
+          this->replacementPolicy->CacheHitUpdate(setIndex,i);
+          cout<<"Cache hit !!\n";
+          break;
+      }
+    }
+  }
+  //cache miss
+  if(!hit){
+    this->replacementPolicy->Replace(setIndex,addrs,tag);
+    cout<<"cache miss"<<"\n";
+  }
+
+    return 0;
 }
