@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <stdio.h>
 #include <math.h>
+#include <string.h>
 
 using namespace std;
 
@@ -81,11 +82,12 @@ string HextoBinary(string Oxhex){
 ////////////////////////////////////
 class BLOCK{
 public:
+  bool dirty;
   bool valid;
   string tag;
   string data;
   //constructor
-  BLOCK(){this->valid = false;}
+  BLOCK(){this->valid = false; this->dirty = false;}
 };
 
 class SET {
@@ -128,7 +130,7 @@ public:
   void addNextLevelCache(Cache* ch);
   //lookup method
   // return 1 to previous level if found
-  int cacheLookup( string address );
+  int cacheLookup( string address,int rW );
 
 };
 
@@ -159,9 +161,9 @@ class Core{
 
 public:
   int coreId;
-  vector<Cache>CacheHierachy;
+  vector<Cache*>CacheHierachy;
   Core(int id){this->coreId = id;}
-  void addNextLevelCache(Cache ch){ this->CacheHierachy.push_back(ch);}
+  void addNextLevelCache(Cache* ch){ this->CacheHierachy.push_back(ch);}
 };
 
 
@@ -173,10 +175,52 @@ int main(int argc, char const *argv[]) {
   FILE* output;
 
   //open the input files
+ Core c1(1);
+
   if(argc >2){
     cout<<argv[0]<<" "<<argv[1]<<" "<<argv[2]<<" "<<argc<<"\n";
     config = fopen(argv[1],"r");
     trace = fopen(argv[2],"r");
+  	
+  	char numlevel[10],incl[10],bsize[10];
+    fscanf(config,"%s %s %s",numlevel,incl,bsize);
+    int numl = atoi(numlevel);
+    int blocks = atoi(bsize);
+    bool inclbool ;
+    if(atoi(incl)==1)
+    	inclbool=true;
+    else 
+    	inclbool=false;
+
+    Cache* prev = nullptr;
+
+    for(int i=0;i<numl;i++){
+
+    	char csize[100],asc[20],rpol[10],wpl[10];
+	    fscanf(config," %s %s %s %s",csize,asc,rpol,wpl);
+	    //Cache::Cache(int blockSize,bool inclusive,string label,int level,int size,int asc,int rpl,int w){
+	    Cache* L = new Cache(blocks,inclbool,"L"+i,i,atoi(csize),atoi(asc),atoi(rpol),atoi(wpl));
+	    
+	    if(prev!=nullptr)
+	    	prev->addNextLevelCache(L);
+	
+		prev = L;
+
+		c1.addNextLevelCache(L);
+    }
+
+    char addrs[30],read[10];
+    while(fscanf(trace," %s %s",addrs,read)!=EOF){
+    	int val1=atoi(read);
+    	string addr(addrs);
+    	c1.CacheHierachy[0]->cacheLookup(addr,val1);
+    }
+    
+
+
+
+
+
   }
 
   // config = fopen("config.txt","r");
@@ -184,11 +228,11 @@ int main(int argc, char const *argv[]) {
   //raed input from files
 
   //for test
-  Core c1(1);
-  Cache L1(64,true,"L1",1,16384,4,1,1);
+ 
+  //Cache L1(64,true,"L1",1,16384,4,2,1);
 
-  L1.cacheLookup("0x00007ffea7aec6a8");
-  L1.cacheLookup("0x00007ffea7aec6a8");
+ // L1.cacheLookup("0x00007ffea7aec6a8",0);
+  //L1.cacheLookup("0x00007ffea7aec6a8",0);
 
   return 0;
 
@@ -245,6 +289,9 @@ void ReplacementPolicy::Replace(int setIndex,string addrs,string tag){
     Lru(setIndex,addrs,tag);
   else if(policy==PSUEDO_LRU)
     pseudoLru(setIndex,addrs,tag);
+  else if(policy == SRRIP)
+  	srrip(setIndex,addrs,tag);
+
 }
 
 void ReplacementPolicy::Fifo(int setIndex,string addrs,string tag){
@@ -314,7 +361,12 @@ void ReplacementPolicy::pseudoLru(int setIndex,string addrs,string tag){
     for(int i=0;i<pseudoLRUDATA[setIndex].size();i++)
     {
     	if(pseudoLRUDATA[setIndex][i]==0)			//replace this index if true
+<<<<<<< HEAD
+    	{repindex=i;	
+
+=======
     	{repindex=i;							
+>>>>>>> f640f407de13a8cd34bb45f391569f315e00bb63
     	 pseudoLRUDATA[setIndex][i]=1;	
     	 last_access_psuedo=i;
     	 done=1;
@@ -441,6 +493,11 @@ void ReplacementPolicy::CacheHitUpdate(int setIndex,int blockIndex){
 
 void ReplacementPolicy::EvictData(string addrs){
   string bitAdrs = HextoBinary(addrs);
+  //write back value update
+  if(this->cache->writePolicy==1){
+  		//goto next level update cache data
+
+  }
 
   if(this->cache->inclusive){
     //back validation
@@ -508,7 +565,8 @@ void Cache:: createCache(){
 }
 
 
-int Cache:: cacheLookup(string addrs){
+int Cache:: cacheLookup(string addrs,int read){
+
   string bitAdrs = HextoBinary(addrs);
   //last bit for block
   int wordOfset = log2(this->blockSize);
@@ -520,6 +578,7 @@ int Cache:: cacheLookup(string addrs){
   int setIndex = stoi(index,nullptr,2);
   SET* set = this->cache[setIndex];
   bool hit = false;
+  int hitIndex =-1;
   for(int i =0;i< (set->blocks.size());i++){
     //*itr is pointer to BLOCK objects
     // if the block is valid
@@ -530,16 +589,19 @@ int Cache:: cacheLookup(string addrs){
           hit = true;  // get data and supply to cpu
           this->replacementPolicy->CacheHitUpdate(setIndex,i);
           cout<<"Cache hit !!\n";
+          hitIndex = i;
           break;
       }
     }
   }
+
+  if(read==0){
   //cache miss
   if(!hit){
     cout<<"cache miss"<<"\n";
     if(this->nextLevel!=nullptr){
         //go to next level
-        int val = nextLevel->cacheLookup(addrs);
+        int val = nextLevel->cacheLookup(addrs,read);
         if( val ==-1 && (this->inclusive || this->level == 1) ){ //if miss and back to first level or inclusive
             this->replacementPolicy->Replace(setIndex,addrs,tag); //replace the block
         }
@@ -556,6 +618,44 @@ int Cache:: cacheLookup(string addrs){
   }
 
     return 1; //return hit
+  }
+  else 
+  {
+  	if(hit){
+		if(this->writePolicy==0){
+			// go to lower level and update data 
+			//here data is same as addrs so smae
+			// just return hit
+			return 1;
+  		}else if( this->writePolicy==1 ){
+  			set->blocks[hitIndex]->dirty = true;
+  			//
+  		}
+  	}
+  	else{
+
+  		cout<<"cache miss"<<"\n";
+   		if(this->nextLevel!=nullptr){
+        //go to next level
+        int val = nextLevel->cacheLookup(addrs,read);
+        if( val ==-1 && (this->inclusive || this->level == 1) ){ //if miss and back to first level or inclusive
+            this->replacementPolicy->Replace(setIndex,addrs,tag); //replace the block
+        }
+        return val; //return from base hit or miss
+    }else{
+      // see inlcusive exclusive policy all miss lookup from memory
+        if(this->inclusive || this->level==1){
+          this->replacementPolicy->Replace(setIndex,addrs,tag);
+        }
+        //return a miss
+        return -1;
+    }
+  	}
+
+
+
+  }	
+
 }
 
 void Cache::addNextLevelCache(Cache* ch){
