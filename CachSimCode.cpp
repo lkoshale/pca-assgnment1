@@ -364,7 +364,7 @@ int Cache:: cacheLookup(string addrs){
         if( val ==-1 && (this->inclusive || this->level == 1) ){ //if miss and back to first level or inclusive
             this->replacementPolicy->Replace(setIndex,addrs,tag); //replace the block
         }
-        return -1; //return miss
+        return val; //return from base hit or miss
     }else{
       // see inlcusive exclusive policy all miss lookup from memory
         if(this->inclusive || this->level==1){
