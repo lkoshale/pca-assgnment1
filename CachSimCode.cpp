@@ -20,6 +20,14 @@ using namespace std;
 // #define INCLUSIVE 0
 // #define EXCLUSIVE 1
 
+//global variables for output
+int NUM_REF = 0;
+int NUM_READ = 0;
+int NUM_WRITE = 0;
+int NUM_HIT = 0;
+int NUM_WRITE_BACK = 0;
+int NUM_CLEAN_EVICT = 0;
+
 ////////////////////////////
 
 string HextoBinary(string Oxhex){
@@ -212,14 +220,20 @@ int main(int argc, char const *argv[]) {
     char addrs[30],read[10];
     while(fscanf(trace," %s %s",addrs,read)!=EOF){
     	int val1=atoi(read);
+      //updating vals
+      NUM_REF++;
+      if(val1==0)
+        NUM_READ++;
+      else
+        NUM_WRITE++;
+
     	string addr(addrs);
-    	c1.CacheHierachy[0]->cacheLookup(addr,val1);
-    }
+    	int hit = c1.CacheHierachy[0]->cacheLookup(addr,val1);
+      if(hit==1)
+        NUM_HIT++;
     
-
-
-
-
+    }
+  
 
   }
 
@@ -596,60 +610,64 @@ int Cache:: cacheLookup(string addrs,int read){
   }
 
   if(read==0){
-  //cache miss
-  if(!hit){
-    cout<<"cache miss"<<"\n";
-    if(this->nextLevel!=nullptr){
-        //go to next level
-        int val = nextLevel->cacheLookup(addrs,read);
-        if( val ==-1 && (this->inclusive || this->level == 1) ){ //if miss and back to first level or inclusive
-            this->replacementPolicy->Replace(setIndex,addrs,tag); //replace the block
-        }
-        return val; //return from base hit or miss
-    }else{
-      // see inlcusive exclusive policy all miss lookup from memory
-        if(this->inclusive || this->level==1){
-          this->replacementPolicy->Replace(setIndex,addrs,tag);
-        }
-        //return a miss
-        return -1;
+      //cache miss
+    if(!hit){
+      cout<<"cache miss"<<"\n";
+      if(this->nextLevel!=nullptr){
+          //go to next level
+          int val = nextLevel->cacheLookup(addrs,read);
+          if( val ==-1 && (this->inclusive || this->level == 1) ){ //if miss and back to first level or inclusive
+              this->replacementPolicy->Replace(setIndex,addrs,tag); //replace the block
+          }
+          return val; //return from base hit or miss
+      }else{
+        // see inlcusive exclusive policy all miss lookup from memory
+          if(this->inclusive || this->level==1){
+            this->replacementPolicy->Replace(setIndex,addrs,tag);
+          }
+          //return a miss
+          return -1;
+      }
+
     }
 
+      return 1; //return hit
   }
+  else{  //write
+  	
+    if(hit){
+  		if(this->writePolicy==0){
+  			// go to lower level and update data 
+  			//here data is same as addrs so smae
+  			// just return hit
+  			return 1;
+    	}
+      else if( this->writePolicy==1 ){
+    			set->blocks[hitIndex]->dirty = true;
+    			
+    	}
 
-    return 1; //return hit
-  }
-  else 
-  {
-  	if(hit){
-		if(this->writePolicy==0){
-			// go to lower level and update data 
-			//here data is same as addrs so smae
-			// just return hit
-			return 1;
-  		}else if( this->writePolicy==1 ){
-  			set->blocks[hitIndex]->dirty = true;
-  			//
-  		}
-  	}
-  	else{
-
-  		cout<<"cache miss"<<"\n";
-   		if(this->nextLevel!=nullptr){
-        //go to next level
-        int val = nextLevel->cacheLookup(addrs,read);
-        if( val ==-1 && (this->inclusive || this->level == 1) ){ //if miss and back to first level or inclusive
-            this->replacementPolicy->Replace(setIndex,addrs,tag); //replace the block
-        }
-        return val; //return from base hit or miss
-    }else{
-      // see inlcusive exclusive policy all miss lookup from memory
-        if(this->inclusive || this->level==1){
-          this->replacementPolicy->Replace(setIndex,addrs,tag);
-        }
-        //return a miss
-        return -1;
+      return 1;
     }
+    else{
+
+    		cout<<"cache miss"<<"\n";
+     		if(this->nextLevel!=nullptr){
+          //go to next level
+          int val = nextLevel->cacheLookup(addrs,read);
+          if( val ==-1 && (this->inclusive || this->level == 1) ){ //if miss and back to first level or inclusive
+              this->replacementPolicy->Replace(setIndex,addrs,tag); //replace the block
+          }
+          return val; //return from base hit or miss
+        }
+        else{
+           // see inlcusive exclusive policy all miss lookup from memory
+          if(this->inclusive || this->level==1){
+            this->replacementPolicy->Replace(setIndex,addrs,tag);
+          }
+          //return a miss
+          return -1;
+        }
   	}
 
 
