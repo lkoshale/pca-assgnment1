@@ -375,12 +375,7 @@ void ReplacementPolicy::pseudoLru(int setIndex,string addrs,string tag){
     for(int i=0;i<pseudoLRUDATA[setIndex].size();i++)
     {
     	if(pseudoLRUDATA[setIndex][i]==0)			//replace this index if true
-<<<<<<< HEAD
-    	{repindex=i;	
-
-=======
     	{repindex=i;							
->>>>>>> f640f407de13a8cd34bb45f391569f315e00bb63
     	 pseudoLRUDATA[setIndex][i]=1;	
     	 last_access_psuedo=i;
     	 done=1;
