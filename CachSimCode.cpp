@@ -20,14 +20,6 @@ using namespace std;
 // #define INCLUSIVE 0
 // #define EXCLUSIVE 1
 
-//global variables for output
-int NUM_REF = 0;
-int NUM_READ = 0;
-int NUM_WRITE = 0;
-int NUM_HIT = 0;
-int NUM_WRITE_BACK = 0;
-int NUM_CLEAN_EVICT = 0;
-
 ////////////////////////////
 
 string HextoBinary(string Oxhex){
@@ -132,6 +124,15 @@ public:
   vector< Cache* > included;
   Cache* nextLevel;
 
+  //output data
+  int NUM_REF;
+  int NUM_READ;
+  int NUM_WRITE;
+  int NUM_HIT;
+  int NUM_WRITE_BACK;
+  int NUM_CLEAN_EVICT;
+
+
   Cache(int blockSize,bool inclusive,string label,int level,int size,int asc,int rpl,int w);
   //initailize all vectors
   void createCache();
@@ -139,6 +140,8 @@ public:
   //lookup method
   // return 1 to previous level if found
   int cacheLookup( string address,int rW );
+
+  float getMissRatio();
 
 };
 
@@ -183,7 +186,7 @@ int main(int argc, char const *argv[]) {
   FILE* output;
 
   //open the input files
- Core c1(1);
+ Core c1(0);
 
   if(argc >2){
     cout<<argv[0]<<" "<<argv[1]<<" "<<argv[2]<<" "<<argc<<"\n";
@@ -202,7 +205,7 @@ int main(int argc, char const *argv[]) {
 
     Cache* prev = nullptr;
 
-    for(int i=0;i<numl;i++){
+    for(int i=1;i<=numl;i++){
 
     	char csize[100],asc[20],rpol[10],wpl[10];
 	    fscanf(config," %s %s %s %s",csize,asc,rpol,wpl);
@@ -212,29 +215,29 @@ int main(int argc, char const *argv[]) {
 	    if(prev!=nullptr)
 	    	prev->addNextLevelCache(L);
 	
-		prev = L;
+		  prev = L;
 
-		c1.addNextLevelCache(L);
+		  c1.addNextLevelCache(L);
+      
+      //if inclusive
+      if(inclbool){
+        for(int i=0;i<c1.CacheHierachy.size();i++){
+          L->included.push_back(c1.CacheHierachy[i]);
+        }
+      }
+
     }
 
     char addrs[30],read[10];
     while(fscanf(trace," %s %s",addrs,read)!=EOF){
     	int val1=atoi(read);
-      //updating vals
-      NUM_REF++;
-      if(val1==0)
-        NUM_READ++;
-      else
-        NUM_WRITE++;
-
     	string addr(addrs);
-    	int hit = c1.CacheHierachy[0]->cacheLookup(addr,val1);
-      if(hit==1)
-        NUM_HIT++;
-    
+    	int hit = c1.CacheHierachy[0]->cacheLookup(addr,val1);   
     }
   
 
+  }else{
+    printf("provide command line arguments for input\n");
   }
 
   // config = fopen("config.txt","r");
@@ -319,6 +322,8 @@ void ReplacementPolicy::Fifo(int setIndex,string addrs,string tag){
   if(block->valid){
     string evicAddrs = block->data; //here addrs is stored as data
     EvictData(evicAddrs);
+    if(!block->dirty)
+      this->cache->NUM_CLEAN_EVICT++;
   }
 
   // add new data
@@ -326,6 +331,7 @@ void ReplacementPolicy::Fifo(int setIndex,string addrs,string tag){
   //storing addrs as data
   block->data = addrs;
   block->valid = true;
+  block->dirty = false;
 
   //update count
   this->FIFODATA[setIndex]+=1;
@@ -355,7 +361,9 @@ void ReplacementPolicy::Lru(int setIndex,string addrs,string tag){
     	LRUDATA[setIndex].push_back(repindex);				//add it to end
     	block = set->blocks[repindex];
 	    string evicAddrs = block->data; //here addrs is stored as data
-	    EvictData(evicAddrs);    	
+	    EvictData(evicAddrs);   
+      if(!block->dirty)
+        this->cache->NUM_CLEAN_EVICT++; 	
     }
 
 
@@ -364,6 +372,7 @@ void ReplacementPolicy::Lru(int setIndex,string addrs,string tag){
 	  //storing addrs as data
 	  block->data = addrs;
 	  block->valid = true;	
+    block->dirty = false;
 
 }
 
@@ -404,13 +413,16 @@ void ReplacementPolicy::pseudoLru(int setIndex,string addrs,string tag){
   if(block->valid){
     string evicAddrs = block->data; //here addrs is stored as data
     EvictData(evicAddrs);
+    if(!block->dirty)
+      this->cache->NUM_CLEAN_EVICT++;
   }
 
   // add new data
   block->tag = tag;
   //storing addrs as data
   block->data = addrs;
-  block->valid = true;    	
+  block->valid = true;    
+  block->dirty = false;	
 
 }
 
@@ -445,6 +457,8 @@ void ReplacementPolicy::srrip(int setIndex,string addrs,string tag){
   if(block->valid){
     string evicAddrs = block->data; //here addrs is stored as data
     EvictData(evicAddrs);
+    if(!block->dirty)
+      this->cache->NUM_CLEAN_EVICT++;
   }
 
   // add new data
@@ -452,6 +466,7 @@ void ReplacementPolicy::srrip(int setIndex,string addrs,string tag){
   //storing addrs as data
   block->data = addrs;
   block->valid = true;    
+  block->dirty = false;
 
 }
 
@@ -502,10 +517,10 @@ void ReplacementPolicy::CacheHitUpdate(int setIndex,int blockIndex){
 
 void ReplacementPolicy::EvictData(string addrs){
   string bitAdrs = HextoBinary(addrs);
+  
   //write back value update
   if(this->cache->writePolicy==1){
   		//goto next level update cache data
-
   }
 
   if(this->cache->inclusive){
@@ -559,7 +574,17 @@ Cache::Cache(int blockSize,bool inclusive,string label,int level,int size,int as
   this->indexSize = this->size/(this->asocitivity * this->blockSize);
   this->replacementPolicy = new ReplacementPolicy(replacementPolicyID,this);
   createCache();
+
+  //initialize all output data
+  this->NUM_REF = 0;
+  this->NUM_HIT = 0;
+  this->NUM_WRITE = 0;
+  this->NUM_READ = 0;
+  this->NUM_WRITE_BACK =0;
+  this->NUM_CLEAN_EVICT = 0;
+
 }
+
 //initailizse all the blocks with valid bit 0
 void Cache:: createCache(){
   for(int i=0;i<this->indexSize;i++){
@@ -575,6 +600,9 @@ void Cache:: createCache(){
 
 
 int Cache:: cacheLookup(string addrs,int read){
+
+  //LOOKUP --> CacheRefs
+  this->NUM_REF++;
 
   string bitAdrs = HextoBinary(addrs);
   //last bit for block
@@ -604,7 +632,14 @@ int Cache:: cacheLookup(string addrs,int read){
     }
   }
 
+
+  if(hit)
+    this->NUM_HIT++;
+
   if(read==0){
+      //READ refs
+      this->NUM_READ++;
+
       //cache miss
     if(!hit){
       cout<<"cache miss"<<"\n";
@@ -628,7 +663,9 @@ int Cache:: cacheLookup(string addrs,int read){
 
       return 1; //return hit
   }
-  else{  //write
+  else{  
+        //write
+        this->NUM_WRITE++;
   	
     if(hit){
   		if(this->writePolicy==0){
@@ -673,4 +710,9 @@ int Cache:: cacheLookup(string addrs,int read){
 
 void Cache::addNextLevelCache(Cache* ch){
   this->nextLevel = ch;
+}
+
+float Cache::getMissRatio(){
+  float hitRatio = this->NUM_HIT/(float)this->NUM_REF ;
+  return (1 - hitRatio);
 }
