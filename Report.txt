@@ -1,0 +1,16 @@
+
+CS15B049 :
+	- Data structure for CPU,Cache,ReplacementPolicy
+	- function for Eviction of cache data
+	- FIFO and write through policies
+	- cache look up function
+	- makfile ,output writing
+
+CS15B013:
+	- LRU replacement policy and Pseudo-LRU replacement policy
+	- SRRIP replacement policy
+	- write back policy
+	- taking input from file
+	- function to update data for replacement policies.
+
+
