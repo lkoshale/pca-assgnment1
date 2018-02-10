@@ -189,7 +189,7 @@ int main(int argc, char const *argv[]) {
  Core c1(0);
 
   if(argc >2){
-    cout<<argv[0]<<" "<<argv[1]<<" "<<argv[2]<<" "<<argc<<"\n";
+    // cout<<argv[0]<<" "<<argv[1]<<" "<<argv[2]<<" "<<argc<<"\n";
     config = fopen(argv[1],"r");
     trace = fopen(argv[2],"r");
   	
@@ -210,7 +210,8 @@ int main(int argc, char const *argv[]) {
     	char csize[100],asc[20],rpol[10],wpl[10];
 	    fscanf(config," %s %s %s %s",csize,asc,rpol,wpl);
 	    //Cache::Cache(int blockSize,bool inclusive,string label,int level,int size,int asc,int rpl,int w){
-	    Cache* L = new Cache(blocks,inclbool,"L"+i,i,atoi(csize),atoi(asc),atoi(rpol),atoi(wpl));
+      string label = "L"+to_string(i);
+	    Cache* L = new Cache(blocks,inclbool,label,i,atoi(csize),atoi(asc),atoi(rpol),atoi(wpl));
 	    
 	    if(prev!=nullptr)
 	    	prev->addNextLevelCache(L);
@@ -234,6 +235,25 @@ int main(int argc, char const *argv[]) {
     	string addr(addrs);
     	int hit = c1.CacheHierachy[0]->cacheLookup(addr,val1);   
     }
+
+
+    output = fopen("Stats.txt","w");
+    
+    for(int i=0;i<c1.CacheHierachy.size();i++){
+      Cache* c = c1.CacheHierachy[i];
+
+      fprintf(output, "C0.%s.memRefs = %d\n",c->label.c_str(),c->NUM_REF );
+      fprintf(output, "C0.%s.numReads = %d\n",c->label.c_str(),c->NUM_READ );
+      fprintf(output, "C0.%s.numWrites = %d\n",c->label.c_str(),c->NUM_WRITE );
+      fprintf(output, "C0.%s.numHits = %d\n",c->label.c_str(),c->NUM_HIT );
+      fprintf(output, "C0.%s.missRatio = %lf\n",c->label.c_str(),c->getMissRatio() );
+      fprintf(output, "C0.%s.numWritebacks = %d\n",c->label.c_str(),c->NUM_WRITE_BACK );
+      fprintf(output, "C0.%s.numCleanEvicts = %d\n",c->label.c_str(),c->NUM_CLEAN_EVICT );
+    }
+
+    fclose(output);
+    fclose(config);
+    fclose(trace);
   
 
   }else{
@@ -521,6 +541,45 @@ void ReplacementPolicy::EvictData(string addrs){
   //write back value update
   if(this->cache->writePolicy==1){
   		//goto next level update cache data
+      if(this->cache->inclusive){
+        //go down an check for each cache
+        Cache* ptr = this->cache;
+        while(ptr->nextLevel!=nullptr){
+
+          string bitAdrs = HextoBinary(addrs);
+          //last bit for block
+          int wordOfset = log2(ptr->nextLevel->blockSize);
+          int indexOfset = log2(ptr->nextLevel->indexSize);
+          string tag = bitAdrs.substr(0,(bitAdrs.length()-(indexOfset+wordOfset)));
+          string index = bitAdrs.substr(tag.size(),indexOfset);
+
+          //cout<<wordOfset<<" "<<indexOfset<<" "<<tag.size()<<" "<<tag<<" "<<index<<"\n";
+          int setIndex = stoi(index,nullptr,2);
+          SET* set = ptr->nextLevel->cache[setIndex];
+          bool hit = false;
+          int hitIndex =-1;
+          for(int i =0;i< (set->blocks.size());i++){
+            //*itr is pointer to BLOCK objects
+            // if the block is valid
+            if( (set->blocks[i])->valid ){
+              //match for tag
+              if( (set->blocks[i])->tag == tag){
+                  //cache HIT
+                  hit = true;  // get data and supply to cpu
+                  // this->replacementPolicy->CacheHitUpdate(setIndex,i);
+                  // cout<<"Cache hit !!\n";
+                  hitIndex = i;
+                  (set->blocks[i])->dirty = true;
+                  ptr->nextLevel->NUM_WRITE_BACK++;
+                  break;
+              }
+            }
+          }
+
+          ptr->nextLevel = ptr->nextLevel->nextLevel;
+        }
+      }
+      // write to memory
   }
 
   if(this->cache->inclusive){
@@ -624,8 +683,9 @@ int Cache:: cacheLookup(string addrs,int read){
       if( (set->blocks[i])->tag == tag){
           //cache HIT
           hit = true;  // get data and supply to cpu
+          this->NUM_HIT++;
           this->replacementPolicy->CacheHitUpdate(setIndex,i);
-          cout<<"Cache hit !!\n";
+          // cout<<"Cache hit !!\n";
           hitIndex = i;
           break;
       }
@@ -633,16 +693,13 @@ int Cache:: cacheLookup(string addrs,int read){
   }
 
 
-  if(hit)
-    this->NUM_HIT++;
-
   if(read==0){
       //READ refs
       this->NUM_READ++;
 
       //cache miss
     if(!hit){
-      cout<<"cache miss"<<"\n";
+      // cout<<"cache miss"<<"\n";
       if(this->nextLevel!=nullptr){
           //go to next level
           int val = nextLevel->cacheLookup(addrs,read);
@@ -669,21 +726,34 @@ int Cache:: cacheLookup(string addrs,int read){
   	
     if(hit){
   		if(this->writePolicy==0){
-  			// go to lower level and update data 
-  			//here data is same as addrs so smae
-  			// just return hit
-  			return 1;
+  			// write to memory also
+  			
+        //written to cache
+        this->NUM_WRITE_BACK++;
+        
+        return 1;
     	}
       else if( this->writePolicy==1 ){
     			set->blocks[hitIndex]->dirty = true;
     			
+          //write to cache not memory
+          this->NUM_WRITE_BACK++;
     	}
 
       return 1;
     }
     else{
 
-    		cout<<"cache miss"<<"\n";
+        if(this->writePolicy==0){
+          // update memory bring back to cache
+        }
+        else{
+          // while replace evicting data write to memory
+        }
+
+
+
+    		// cout<<"cache miss"<<"\n";
      		if(this->nextLevel!=nullptr){
           //go to next level
           int val = nextLevel->cacheLookup(addrs,read);
